@@ -346,10 +346,22 @@ public class QueueModule<T> : ModuleBase<SocketCommandContext> where T : PKM, ne
     private async Task SendTemporaryMessageAsync(string message)
     {
         var sentMessage = await ReplyAsync(message).ConfigureAwait(false);
+        var location = DiscordLogUtil.GetChannelLocation(Context);
         _ = Task.Run(async () =>
         {
-            await Task.Delay(TimeSpan.FromSeconds(10));
-            await sentMessage.DeleteAsync().ConfigureAwait(false);
+            try
+            {
+                await Task.Delay(TimeSpan.FromSeconds(10));
+                await sentMessage.DeleteAsync().ConfigureAwait(false);
+            }
+            catch (HttpException ex)
+            {
+                LogUtil.LogError($"Failed to delete temporary message. {location} Discord error: {(int?)ex.DiscordCode ?? (int)ex.HttpCode} {ex.Reason}", nameof(QueueModule<T>));
+            }
+            catch (Exception ex)
+            {
+                LogUtil.LogSafe(ex, nameof(QueueModule<T>));
+            }
         });
     }
 

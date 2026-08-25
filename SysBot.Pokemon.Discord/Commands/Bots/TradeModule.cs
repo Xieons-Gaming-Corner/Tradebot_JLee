@@ -610,14 +610,23 @@ public class TradeModule<T> : ModuleBase<SocketCommandContext> where T : PKM, ne
             }
             catch (Exception ex)
             {
+                var location = DiscordLogUtil.GetChannelLocation(Context);
+                Base.LogUtil.LogError($"Batch trade processing error. {location} Error: {ex.Message}", nameof(BatchTradeAsync));
+
                 try
                 {
                     await processingMessage.DeleteAsync();
                 }
                 catch { }
 
-                await Context.Channel.SendMessageAsync($"{Context.User.Mention} An error occurred while processing your batch trade. Please try again.");
-                Base.LogUtil.LogError($"Batch trade processing error: {ex.Message}", nameof(BatchTradeAsync));
+                try
+                {
+                    await Context.Channel.SendMessageAsync($"{Context.User.Mention} An error occurred while processing your batch trade. Please try again.");
+                }
+                catch (HttpException notifyEx)
+                {
+                    Base.LogUtil.LogError($"Failed to notify channel of batch trade error. {location} Discord error: {(int?)notifyEx.DiscordCode ?? (int)notifyEx.HttpCode} {notifyEx.Reason}", nameof(BatchTradeAsync));
+                }
             }
         });
 

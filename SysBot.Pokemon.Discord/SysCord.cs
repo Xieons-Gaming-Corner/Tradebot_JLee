@@ -631,7 +631,8 @@ public sealed class SysCord<T> where T : PKM, new()
         }
         catch (HttpException ex) when (ex.DiscordCode == DiscordErrorCode.InsufficientPermissions) // Missing Permissions
         {
-            await Log(new LogMessage(LogSeverity.Warning, "Command", $"Missing permissions to handle a message in channel {arg.Channel.Name}")).ConfigureAwait(false);
+            var location = DiscordLogUtil.GetChannelLocation(arg.Channel);
+            await Log(new LogMessage(LogSeverity.Warning, "Command", $"Missing permissions to handle a message. {location}")).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
@@ -789,7 +790,8 @@ public sealed class SysCord<T> where T : PKM, new()
         }
         catch (HttpException ex) when (ex.DiscordCode == DiscordErrorCode.InsufficientPermissions) // Missing Permissions
         {
-            await Log(new LogMessage(LogSeverity.Warning, "Command", $"Missing permissions to send message in channel {channel.Name}")).ConfigureAwait(false);
+            var location = DiscordLogUtil.GetChannelLocation(channel);
+            await Log(new LogMessage(LogSeverity.Warning, "Command", $"Missing permissions to send message. {location}")).ConfigureAwait(false);
         }
         catch (Exception ex)
         {

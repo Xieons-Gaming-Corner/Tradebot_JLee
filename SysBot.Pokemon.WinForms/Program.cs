@@ -28,9 +28,14 @@ internal static class Program
         };
 
         // Catch unobserved task exceptions (async code that faults without being awaited).
+        // NOTE: by the time this fires (on the finalizer thread), the original Discord.NET
+        // guild/channel context is gone. If this keeps firing, find the fire-and-forget
+        // Task.Run/ContinueWith at the inner exception's stack trace location and wrap it in its
+        // own try/catch that logs guild/channel IDs before the exception can go unobserved again.
         TaskScheduler.UnobservedTaskException += (_, e) =>
         {
-            LogUtil.LogError($"Unobserved task exception: {e.Exception.Message}\n{e.Exception.StackTrace}", "Program");
+            foreach (var inner in e.Exception.Flatten().InnerExceptions)
+                LogUtil.LogError($"Unobserved task exception: {inner.GetType().Name}: {inner.Message}\n{inner.StackTrace}", "Program");
             e.SetObserved(); // Prevent process termination
         };
 

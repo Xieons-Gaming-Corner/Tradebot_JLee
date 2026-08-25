@@ -817,6 +817,7 @@ public static class QueueHelper<T> where T : PKM, new()
 
     private static async Task HandleDiscordExceptionAsync(SocketCommandContext context, SocketUser trader, HttpException ex)
     {
+        var location = DiscordLogUtil.GetChannelLocation(context);
         string message = string.Empty;
         switch (ex.DiscordCode)
         {
@@ -826,7 +827,7 @@ public static class QueueHelper<T> where T : PKM, new()
                     if (!permissions.SendMessages)
                     {
                         message = "You must grant me \"Send Messages\" permissions!";
-                        Base.LogUtil.LogError("QueueHelper", message);
+                        Base.LogUtil.LogError($"Missing \"Send Messages\" permission. {location}", nameof(QueueHelper<T>));
                         return;
                     }
                     if (!permissions.ManageMessages)
@@ -835,6 +836,7 @@ public static class QueueHelper<T> where T : PKM, new()
                         var owner = app.Owner.Id;
                         message = $"<@{owner}> You must grant me \"Manage Messages\" permissions!";
                     }
+                    Base.LogUtil.LogError($"Missing permissions (Discord code {(int?)ex.DiscordCode}). {location}", nameof(QueueHelper<T>));
                 }
                 break;
 
@@ -858,7 +860,7 @@ public static class QueueHelper<T> where T : PKM, new()
         }
         catch (HttpException httpEx)
         {
-            Base.LogUtil.LogError($"QueueHelper: Unable to send message to channel ({(int?)httpEx.DiscordCode ?? (int)httpEx.HttpCode}): {httpEx.Reason}", nameof(QueueHelper<T>));
+            Base.LogUtil.LogError($"Unable to send message to channel ({(int?)httpEx.DiscordCode ?? (int)httpEx.HttpCode}: {httpEx.Reason}). {location}", nameof(QueueHelper<T>));
         }
     }
 

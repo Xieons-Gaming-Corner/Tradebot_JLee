@@ -1,5 +1,6 @@
 using Discord;
 using Discord.Commands;
+using Discord.Net;
 using PKHeX.Core;
 using PKHeX.Core.AutoMod;
 using SysBot.Base;
@@ -124,14 +125,23 @@ namespace SysBot.Pokemon.Discord
                 }
                 catch (Exception ex)
                 {
+                    var location = DiscordLogUtil.GetChannelLocation(Context);
+                    Base.LogUtil.LogError($"Batch Mystery Egg processing error. {location} Error: {ex.Message}", nameof(BatchMysteryEggAsync));
+
                     try
                     {
                         await processingMessage.DeleteAsync();
                     }
                     catch { }
 
-                    await Context.Channel.SendMessageAsync($"{Context.User.Mention} An error occurred while processing your batch Mystery Egg request. Please try again.");
-                    Base.LogUtil.LogError($"Batch Mystery Egg processing error: {ex.Message}", nameof(BatchMysteryEggAsync));
+                    try
+                    {
+                        await Context.Channel.SendMessageAsync($"{Context.User.Mention} An error occurred while processing your batch Mystery Egg request. Please try again.");
+                    }
+                    catch (HttpException notifyEx)
+                    {
+                        Base.LogUtil.LogError($"Failed to notify channel of batch Mystery Egg error. {location} Discord error: {(int?)notifyEx.DiscordCode ?? (int)notifyEx.HttpCode} {notifyEx.Reason}", nameof(BatchMysteryEggAsync));
+                    }
                 }
             });
 
