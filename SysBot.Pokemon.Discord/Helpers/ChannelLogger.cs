@@ -46,6 +46,16 @@ public class ChannelLogger(ulong ChannelID, ISocketMessageChannel Channel) : ILo
         return $"Channel: #{Channel.Name} ({ChannelID})";
     }
 
+    private const int DiscordMaxMessageLength = 2000;
+
     private static string GetMessage(ReadOnlySpan<char> msg, string identity)
-        => $"> [{DateTime.Now:hh:mm:ss}] - {identity}: {msg}";
+    {
+        var text = $"> [{DateTime.Now:hh:mm:ss}] - {identity}: {msg}";
+        if (text.Length > DiscordMaxMessageLength)
+        {
+            const string suffix = "…(truncated)";
+            text = string.Concat(text.AsSpan(0, DiscordMaxMessageLength - suffix.Length), suffix);
+        }
+        return text;
+    }
 }
