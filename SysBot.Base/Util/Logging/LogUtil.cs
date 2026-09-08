@@ -1,4 +1,8 @@
-```csharp
+Copy only the text inside this block into:
+
+text
+SysBot.Base/Util/Logging/LogUtil.cs
+csharp
 using NLog;
 using NLog.Config;
 using NLog.Targets;
@@ -18,7 +22,7 @@ namespace SysBot.Base;
 public static class LogUtil
 {
     // Hook in here if you want to forward the message elsewhere.
-    // Access through AddForwarder / RemoveForwarder for thread safety.
+    // Use AddForwarder / RemoveForwarder instead of editing this list directly.
     public static readonly List<ILogForwarder> Forwarders = [];
 
     private static readonly object ForwardersLock = new();
@@ -27,8 +31,8 @@ public static class LogUtil
     // Cache of per-bot loggers to avoid recreating them
     private static readonly ConcurrentDictionary<string, Logger> BotLoggers = new();
 
-    // Buffer for early bot logs before trainer identification
-    // Key: Connection IP/USB identifier, Value: List of buffered log entries
+    // Buffer for early bot logs before trainer identification.
+    // Key: Connection IP/USB identifier, Value: List of buffered log entries.
     private static readonly ConcurrentDictionary<string, List<BufferedLogEntry>> LogBuffer = new();
 
     private static readonly string WorkingDirectory = Path.GetDirectoryName(Environment.ProcessPath)!;
@@ -43,14 +47,12 @@ public static class LogUtil
         var config = new LoggingConfiguration();
         Directory.CreateDirectory("logs");
 
-        // Master log file (all bots combined) - only if enabled
         if (LogConfig.EnableMasterLog)
         {
             var masterLogFile = new FileTarget("masterlog")
             {
                 FileName = Path.Combine(WorkingDirectory, "logs", "SysBotLog.txt"),
                 ConcurrentWrites = true,
-
                 ArchiveEvery = FileArchivePeriod.Day,
                 ArchiveNumbering = ArchiveNumberingMode.Date,
                 ArchiveFileName = Path.Combine(WorkingDirectory, "logs", "SysBotLog.{#}.txt"),
@@ -70,19 +72,17 @@ public static class LogUtil
     public static DateTime LastLogged { get; private set; } = DateTime.Now;
 
     /// <summary>
-    /// Tracks the last time each bot logged a message, keyed by bot identity.
-    /// Used by the watchdog to detect frozen-but-still-running bots.
+    /// Tracks the last time each trainer-identified bot logged a message.
     /// </summary>
     public static readonly ConcurrentDictionary<string, DateTime> BotLastActivity = new();
 
     /// <summary>
-    /// Maps connection name (IP/USB) to trainer identifier.
-    /// Populated when a bot is identified.
+    /// Maps connection identifiers such as IP/USB names to trainer identifiers.
     /// </summary>
     public static readonly ConcurrentDictionary<string, string> ConnectionToTrainerMap = new();
 
     /// <summary>
-    /// Adds a log forwarder safely.
+    /// Safely adds a log forwarder, such as a Discord logging channel.
     /// </summary>
     public static void AddForwarder(ILogForwarder forwarder)
     {
@@ -94,7 +94,7 @@ public static class LogUtil
     }
 
     /// <summary>
-    /// Removes a log forwarder safely.
+    /// Safely removes a log forwarder.
     /// </summary>
     public static bool RemoveForwarder(ILogForwarder forwarder)
     {
@@ -103,19 +103,19 @@ public static class LogUtil
     }
 
     /// <summary>
-    /// Removes multiple log forwarders safely.
+    /// Safely removes a collection of log forwarders.
     /// </summary>
     public static void RemoveForwarders(IEnumerable<ILogForwarder> forwarders)
     {
-        var remove = forwarders.ToHashSet();
+        var toRemove = forwarders.ToHashSet();
 
         lock (ForwardersLock)
-            Forwarders.RemoveAll(remove.Contains);
+            Forwarders.RemoveAll(toRemove.Contains);
     }
 
     /// <summary>
-    /// Returns a fixed copy of the forwarders.
-    /// This prevents collection-modified exceptions while logs are being sent.
+    /// Returns a fixed copy of active log forwarders.
+    /// This prevents collection-modified errors when channels are added or removed while logging.
     /// </summary>
     public static ILogForwarder[] GetForwarderSnapshot()
     {
@@ -126,8 +126,6 @@ public static class LogUtil
     /// <summary>
     /// Gets or creates a per-bot logger for the specified bot identity.
     /// </summary>
-    /// <param name="identity">Bot identifier, such as "USB-1" or "192.168.1.100".</param>
-    /// <returns>Logger instance for the bot.</returns>
     private static Logger GetOrCreateBotLogger(string identity)
     {
         if (!LogConfig.EnablePerBotLogging || !LogConfig.LoggingEnabled)
@@ -151,7 +149,6 @@ public static class LogUtil
             {
                 FileName = Path.Combine(botLogDir, fileName),
                 ConcurrentWrites = true,
-
                 ArchiveEvery = FileArchivePeriod.Day,
                 ArchiveNumbering = ArchiveNumberingMode.Date,
                 ArchiveFileName = Path.Combine(botLogDir, "SysBotLog.{#}.txt"),
@@ -165,6 +162,7 @@ public static class LogUtil
 
             config.AddTarget(botLogTarget);
             config.AddRule(LogLevel.Debug, LogLevel.Fatal, botLogTarget, loggerName);
+
             LogManager.Configuration = config;
 
             return botLogger;
@@ -172,8 +170,7 @@ public static class LogUtil
     }
 
     /// <summary>
-    /// Sanitizes bot name for use in file paths.
-    /// Creates folders like logs/HeXbyt3-483256/, logs/A-Z-734959/, or logs/System/.
+    /// Sanitizes a bot name for use in folder/file paths.
     /// </summary>
     private static string SanitizeBotName(string botName)
     {
@@ -201,7 +198,7 @@ public static class LogUtil
     }
 
     /// <summary>
-    /// Checks whether an identity is a trainer identifier in Name-XXXXXX format.
+    /// Checks whether an identity uses the trainer format Name-XXXXXX.
     /// </summary>
     private static bool IsTrainerIdentifier(string identity)
     {
@@ -210,7 +207,7 @@ public static class LogUtil
     }
 
     /// <summary>
-    /// Checks whether identity should skip per-bot logging because it is a global service.
+    /// Checks whether the identity belongs to a global/system service.
     /// </summary>
     private static bool IsGlobalIdentity(string identity)
     {
@@ -220,7 +217,8 @@ public static class LogUtil
     }
 
     /// <summary>
-    /// Flushes buffered logs from an early identifier, such as IP/USB, to a trainer folder.
+    /// Flushes buffered logs from an early identifier, such as an IP or USB name,
+    /// to the final trainer-specific logging folder.
     /// </summary>
     public static void FlushBufferedLogs(string earlyIdentifier, string trainerIdentifier)
     {
@@ -344,7 +342,7 @@ public static class LogUtil
     }
 
     /// <summary>
-    /// Clears the per-bot logger cache for a specific bot.
+    /// Clears the cached logger for a disconnected bot.
     /// </summary>
     public static void ClearBotLogger(string identity)
     {
@@ -352,7 +350,7 @@ public static class LogUtil
     }
 
     /// <summary>
-    /// Gets the log file path for a specific bot.
+    /// Gets the expected log-file path for a bot identity.
     /// </summary>
     public static string GetBotLogPath(string identity)
     {
@@ -366,15 +364,16 @@ public static class LogUtil
         return Path.Combine(botLogDir, fileName);
     }
 
+    /// <summary>
+    /// Legacy log forwarding method retained for callers inside SysBot.Base.
+    /// </summary>
     private static void Log(string message, string identity)
     {
         ForwardLog(message, identity);
     }
 
     /// <summary>
-    /// Sends a log entry to a snapshot of the current forwarders.
-    /// The snapshot prevents a Discord add/remove command from breaking
-    /// an active logging loop with a collection-modified exception.
+    /// Sends the message to a stable snapshot of active forwarding targets.
     /// </summary>
     private static void ForwardLog(string message, string identity)
     {
@@ -400,4 +399,3 @@ public static class LogUtil
         LastLogged = DateTime.Now;
     }
 }
-```
