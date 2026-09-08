@@ -2,13 +2,13 @@ name: .NET Core Desktop
 
 on:
   push:
-    branches: [ "main" ]
+    branches: ["main"]
   pull_request:
-    branches: [ "main" ]
+    branches: ["main"]
   workflow_dispatch:
     inputs:
       force_build:
-        description: "Force build and release even if the version tag already exists"
+        description: "Force a build and update the existing release, even when the version tag exists"
         required: true
         default: false
         type: boolean
@@ -29,16 +29,24 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Read Current Version
         id: read_version
         shell: bash
         run: |
-          CURRENT_VERSION=$(grep 'public const string Version' SysBot.Pokemon/Helpers/SVRaidBot.cs | sed 's/.*Version = "\(.*\)";/\1/')
-          echo "Current version is $CURRENT_VERSION"
+          CURRENT_VERSION=$(sed -nE 's/^[[:space:]]*public const string Version[[:space:]]*=[[:space:]]*"([^"]+)";.*/\1/p' SysBot.Pokemon/Helpers/SVRaidBot.cs | head -n 1)
+
+          if [ -z "$CURRENT_VERSION" ]; then
+            echo "::error::Could not find 'public const string Version = \"x.y.z\";' in SysBot.Pokemon/Helpers/SVRaidBot.cs"
+            exit 1
+          fi
+
+          echo "Current version is v$CURRENT_VERSION"
           echo "current_version=v$CURRENT_VERSION" >> "$GITHUB_OUTPUT"
 
-      - name: Check if tag exists
+      - name: Check whether release tag exists
         id: compare_versions
         shell: bash
         env:
@@ -47,27 +55,25 @@ jobs:
           EVENT_NAME: ${{ github.event_name }}
         run: |
           if [ "$EVENT_NAME" = "workflow_dispatch" ] && [ "$FORCE_BUILD" = "true" ]; then
-            echo "Manual force build requested"
+            echo "Manual force build requested. The existing release will be updated if it exists."
             echo "version_changed=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
-          git fetch --prune --unshallow --tags || git fetch --prune --tags
-
-          if git ls-remote --tags --exit-code origin "$CURRENT_VERSION" >/dev/null 2>&1; then
-            echo "Tag $CURRENT_VERSION already exists, skipping release"
+          if git rev-parse -q --verify "refs/tags/$CURRENT_VERSION" >/dev/null; then
+            echo "Tag $CURRENT_VERSION already exists. A build will still run, but no release will be created."
             echo "version_changed=false" >> "$GITHUB_OUTPUT"
           else
-            echo "Tag $CURRENT_VERSION does not exist, creating release"
+            echo "Tag $CURRENT_VERSION does not exist. A release will be created after the build."
             echo "version_changed=true" >> "$GITHUB_OUTPUT"
           fi
 
   build:
     needs: version-check
-    if: needs.version-check.outputs.version_changed == 'true'
     runs-on: windows-latest
     env:
-      Project_Name: SysBot.Pokemon.WinForms/SysBot.Pokemon.WinForms.csproj
+      PROJECT_NAME: SysBot.Pokemon.WinForms/SysBot.Pokemon.WinForms.csproj
+      PUBLISH_DIRECTORY: ./publish
 
     steps:
       - name: Checkout
@@ -75,32 +81,53 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Install .NET Core
+      - name: Setup .NET 8
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 8.0.x
 
-      - name: Setup MSBuild.exe
-        uses: microsoft/setup-msbuild@v2
-
       - name: Restore dependencies
-        run: dotnet restore ${{ env.Project_Name }} --runtime win-x64
+        shell: pwsh
+        run: dotnet restore "${{ env.PROJECT_NAME }}" --runtime win-x64
 
       - name: Build
-        run: dotnet build ${{ env.Project_Name }} --configuration Release --no-restore
+        shell: pwsh
+        run: dotnet build "${{ env.PROJECT_NAME }}" --configuration Release --no-restore
 
-      - name: Publish
-        run: dotnet publish ${{ env.Project_Name }} --configuration Release --output ./publish /p:PublishSingleFile=true /p:SelfContained=false /p:RuntimeIdentifier=win-x64
+      - name: Publish single-file Windows build
+        shell: pwsh
+        run: >
+          dotnet publish "${{ env.PROJECT_NAME }}"
+          --configuration Release
+          --no-restore
+          --runtime win-x64
+          --self-contained false
+          --output "${{ env.PUBLISH_DIRECTORY }}"
+          /p:PublishSingleFile=true
+          /p:DebugType=None
+          /p:DebugSymbols=false
 
-      - name: Upload build artifacts
+      - name: Verify published executable
+        shell: pwsh
+        run: |
+          $exe = Get-ChildItem -Path "${{ env.PUBLISH_DIRECTORY }}" -Filter "SVRaidBot.exe" -Recurse | Select-Object -First 1
+          if (-not $exe) {
+            Write-Error "SVRaidBot.exe was not found in the publish directory. Check AssemblyName and publish output."
+            exit 1
+          }
+          Write-Host "Found published executable: $($exe.FullName)"
+
+      - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
           name: SVRaidBot
           path: ./publish
+          if-no-files-found: error
+          retention-days: 14
 
   create-release:
     needs: [version-check, build]
-    if: needs.version-check.outputs.version_changed == 'true'
+    if: needs.version-check.outputs.version_changed == 'true' && github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -111,42 +138,59 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Read Current Version
-        id: read_version
+      - name: Get release notes
+        id: release_notes
         shell: bash
+        env:
+          CURRENT_VERSION: ${{ needs.version-check.outputs.current_version }}
         run: |
-          CURRENT_VERSION=$(grep 'public const string Version' SysBot.Pokemon/Helpers/SVRaidBot.cs | sed 's/.*Version = "\(.*\)";/\1/')
-          echo "CURRENT_VERSION=v$CURRENT_VERSION" >> "$GITHUB_ENV"
+          PREVIOUS_TAG=$(git tag --sort=-version:refname | grep -Fxv "$CURRENT_VERSION" | head -n 1 || true)
 
-      - name: Get Recent Changes
-        id: recent_changes
-        shell: bash
-        run: |
-          LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || git rev-list --max-parents=0 HEAD)
-          RECENT_CHANGES=$(git log --pretty=format:"- %s" "$LATEST_TAG"..HEAD)
+          if [ -n "$PREVIOUS_TAG" ]; then
+            RECENT_CHANGES=$(git log --pretty=format:'- %s' "$PREVIOUS_TAG"..HEAD)
+          else
+            RECENT_CHANGES=$(git log --pretty=format:'- %s')
+          fi
 
           if [ -z "$RECENT_CHANGES" ]; then
             RECENT_CHANGES="- Initial release"
           fi
 
-          echo "RECENT_CHANGES<<EOF" >> "$GITHUB_ENV"
-          echo "$RECENT_CHANGES" >> "$GITHUB_ENV"
-          echo "EOF" >> "$GITHUB_ENV"
+          {
+            echo "RECENT_CHANGES<<EOF"
+            echo "$RECENT_CHANGES"
+            echo "EOF"
+          } >> "$GITHUB_ENV"
 
-      - name: Download build artifacts
+      - name: Download build artifact
         uses: actions/download-artifact@v4
         with:
           name: SVRaidBot
           path: ./publish
 
-      - name: Create Release
+      - name: Find executable for release
+        shell: bash
+        run: |
+          EXE_PATH=$(find ./publish -type f -iname 'SVRaidBot.exe' -print -quit)
+
+          if [ -z "$EXE_PATH" ]; then
+            echo "::error::SVRaidBot.exe was not found in the downloaded artifact."
+            exit 1
+          fi
+
+          echo "RELEASE_EXE=$EXE_PATH" >> "$GITHUB_ENV"
+          echo "Uploading $EXE_PATH"
+
+      - name: Create or update GitHub release
         uses: softprops/action-gh-release@v3
         with:
-          tag_name: ${{ env.CURRENT_VERSION }}
-          name: Release ${{ env.CURRENT_VERSION }}
+          tag_name: ${{ needs.version-check.outputs.current_version }}
+          name: Release ${{ needs.version-check.outputs.current_version }}
           body: |
             ## Recent Changes
             ${{ env.RECENT_CHANGES }}
-          files: ./publish/SVRaidBot.exe
+          files: ${{ env.RELEASE_EXE }}
+          overwrite_files: true
+          fail_on_unmatched_files: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
