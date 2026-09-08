@@ -14,7 +14,7 @@
 - [![Github](https://img.shields.io/badge/Github-Xieons_Gaming_Corner-grey?style=for-the-badge&logo=github)](https://github.com/xieons-gaming-corner)
 - [![XGC Wiki](https://img.shields.io/badge/Wiki-XGC_on_Github-grey?style=for-the-badge&logo=github)](https://github.com/Xieons-Gaming-Corner/Wiki)
 a
-
+s
 # Project Forking: 
 
 > * Xieon's Gaming Corner is currently working off a fork of this tradebot that was originally forked from [this repository](https://github.com/jonklee99/Tradebot)
