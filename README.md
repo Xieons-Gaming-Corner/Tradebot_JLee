@@ -1,3 +1,26 @@
+# Xieon's Gaming Corner: 
+[<img src="https://canary.discordapp.com/api/guilds/829181609156411463/widget.png?style=banner2">](https://discord.gg/Xieon)
+
+- [![YouTube](https://img.shields.io/badge/YouTube-XieonGaming-red?style=for-the-badge&logo=youtube)](https://www.youtube.com/@XieonGaming)
+- [![Twitter](https://img.shields.io/badge/Twitter-XieonGaming-blue?style=for-the-badge&logo=twitter)](https://twitter.com/XieonGaming)
+- [![Instagram](https://img.shields.io/badge/Instagram-XieonsGamingCorner-purple?style=for-the-badge&logo=instagram)](https://www.instagram.com/xieonsgamingcorner)
+- [![Discord](https://img.shields.io/badge/Discord-discord.gg/Xieon-blue?style=for-the-badge&logo=discord)](https://discord.gg/Xieon)
+- [![Twitch](https://img.shields.io/badge/Twitch-Xieon-purple?style=for-the-badge&logo=twitch)](https://www.twitch.tv/xieon)
+- [![Kick](https://img.shields.io/badge/Kick-Xieon-green?style=for-the-badge&logo=kick)](https://kick.com/Xieon)
+- [![TikTok](https://img.shields.io/badge/TikTok-XieonGaming-black?style=for-the-badge&logo=tiktok)](https://www.tiktok.com/@xieonsgamingcorner)
+- [![Twitch](https://img.shields.io/badge/Twitch_Bot-SusSpore-red?style=for-the-badge&logo=twitch)](https://www.twitch.tv/SusSpore)
+- [![Discord](https://img.shields.io/badge/Discord_Bot-Aizen_Suske_XGC_BOT-red?style=for-the-badge&logo=discord)](https://discord.com/discovery/applications/1105710749545926676/store)
+- [![Discord](https://img.shields.io/badge/Discord_Bot-Project_Phoenix-red?style=for-the-badge&logo=discord)](https://discord.com/discovery/applications/1283043896334618667/store)
+- [![Github](https://img.shields.io/badge/Github-Xieons_Gaming_Corner-grey?style=for-the-badge&logo=github)](https://github.com/xieons-gaming-corner)
+- [![XGC Wiki](https://img.shields.io/badge/Wiki-XGC_on_Github-grey?style=for-the-badge&logo=github)](https://github.com/Xieons-Gaming-Corner/Wiki)
+
+
+# Project Forking: 
+
+> * Xieon's Gaming Corner is currently working off a fork of this tradebot that was originally forked from [this repository](https://github.com/jonklee99/Tradebot)
+> * The repository may be a fork, of a non XGC Organizational repository, for the XGC user Xieon - which is a 1:1 fork from the above stated author - The middleman Xieon repository can be found [here](https://github.com/Xieon/Tradebot) 
+
+
 > [!IMPORTANT]  
 > Legends Z-A Release is Here! 
 
