@@ -1,4 +1,4 @@
-# Xieon's Gaming Corner: 
+a# Xieon's Gaming Corner: 
 [<img src="https://canary.discordapp.com/api/guilds/829181609156411463/widget.png?style=banner2">](https://discord.gg/Xieon)
 
 - [![YouTube](https://img.shields.io/badge/YouTube-XieonGaming-red?style=for-the-badge&logo=youtube)](https://www.youtube.com/@XieonGaming)
@@ -15,7 +15,7 @@
 - [![XGC Wiki](https://img.shields.io/badge/Wiki-XGC_on_Github-grey?style=for-the-badge&logo=github)](https://github.com/Xieons-Gaming-Corner/Wiki)
 a
 s
-# Project Forking: 
+# Project Forking: a
 
 > * Xieon's Gaming Corner is currently working off a fork of this tradebot that was originally forked from [this repository](https://github.com/jonklee99/Tradebot)
 > * The repository may be a fork, of a non XGC Organizational repository, for the XGC user Xieon - which is a 1:1 fork from the above stated author - The middleman Xieon repository can be found [here](https://github.com/Xieon/Tradebot) 
