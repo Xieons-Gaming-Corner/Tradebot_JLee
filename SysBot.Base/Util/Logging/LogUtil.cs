@@ -1,3 +1,4 @@
+```csharp
 using NLog;
 using NLog.Config;
 using NLog.Targets;
@@ -16,9 +17,11 @@ namespace SysBot.Base;
 /// </summary>
 public static class LogUtil
 {
-    // hook in here if you want to forward the message elsewhere
+    // Hook in here if you want to forward the message elsewhere.
+    // Access through AddForwarder / RemoveForwarder for thread safety.
     public static readonly List<ILogForwarder> Forwarders = [];
 
+    private static readonly object ForwardersLock = new();
     private static readonly Logger Logger = LogManager.GetCurrentClassLogger();
 
     // Cache of per-bot loggers to avoid recreating them
@@ -57,6 +60,7 @@ public static class LogUtil
                 Encoding = Encoding.Unicode,
                 WriteBom = true,
             };
+
             config.AddRule(LogLevel.Debug, LogLevel.Fatal, masterLogFile);
         }
 
@@ -66,22 +70,64 @@ public static class LogUtil
     public static DateTime LastLogged { get; private set; } = DateTime.Now;
 
     /// <summary>
-    /// Tracks the last time each bot logged a message, keyed by bot identity (e.g. "Lugia-245712").
+    /// Tracks the last time each bot logged a message, keyed by bot identity.
     /// Used by the watchdog to detect frozen-but-still-running bots.
     /// </summary>
     public static readonly ConcurrentDictionary<string, DateTime> BotLastActivity = new();
 
     /// <summary>
-    /// Maps connection name (IP/USB) to trainer identifier (e.g. "192.168.1.8" -> "Roaring Moon-536394").
-    /// Populated when a bot is identified. Used by the watchdog to resolve the correct BotLastActivity key.
+    /// Maps connection name (IP/USB) to trainer identifier.
+    /// Populated when a bot is identified.
     /// </summary>
     public static readonly ConcurrentDictionary<string, string> ConnectionToTrainerMap = new();
 
     /// <summary>
-    /// Gets or creates a per-bot logger for the specified bot identity
+    /// Adds a log forwarder safely.
     /// </summary>
-    /// <param name="identity">Bot identifier (e.g., "USB-1", "192.168.1.100")</param>
-    /// <returns>Logger instance for the bot</returns>
+    public static void AddForwarder(ILogForwarder forwarder)
+    {
+        lock (ForwardersLock)
+        {
+            if (!Forwarders.Contains(forwarder))
+                Forwarders.Add(forwarder);
+        }
+    }
+
+    /// <summary>
+    /// Removes a log forwarder safely.
+    /// </summary>
+    public static bool RemoveForwarder(ILogForwarder forwarder)
+    {
+        lock (ForwardersLock)
+            return Forwarders.Remove(forwarder);
+    }
+
+    /// <summary>
+    /// Removes multiple log forwarders safely.
+    /// </summary>
+    public static void RemoveForwarders(IEnumerable<ILogForwarder> forwarders)
+    {
+        var remove = forwarders.ToHashSet();
+
+        lock (ForwardersLock)
+            Forwarders.RemoveAll(remove.Contains);
+    }
+
+    /// <summary>
+    /// Returns a fixed copy of the forwarders.
+    /// This prevents collection-modified exceptions while logs are being sent.
+    /// </summary>
+    public static ILogForwarder[] GetForwarderSnapshot()
+    {
+        lock (ForwardersLock)
+            return Forwarders.ToArray();
+    }
+
+    /// <summary>
+    /// Gets or creates a per-bot logger for the specified bot identity.
+    /// </summary>
+    /// <param name="identity">Bot identifier, such as "USB-1" or "192.168.1.100".</param>
+    /// <returns>Logger instance for the bot.</returns>
     private static Logger GetOrCreateBotLogger(string identity)
     {
         if (!LogConfig.EnablePerBotLogging || !LogConfig.LoggingEnabled)
@@ -89,16 +135,12 @@ public static class LogUtil
 
         return BotLoggers.GetOrAdd(identity, botName =>
         {
-            // Sanitize bot name for file system
             var safeBotName = SanitizeBotName(botName);
             var botLogDir = Path.Combine(WorkingDirectory, "logs", safeBotName);
             Directory.CreateDirectory(botLogDir);
 
-            // Create a unique logger name to avoid conflicts
             var loggerName = $"BotLogger_{safeBotName}";
             var botLogger = LogManager.GetLogger(loggerName);
-
-            // Configure per-bot log target
             var config = LogManager.Configuration ?? new LoggingConfiguration();
 
             var fileName = LogConfig.IncludeTimestampInFilename
@@ -123,7 +165,6 @@ public static class LogUtil
 
             config.AddTarget(botLogTarget);
             config.AddRule(LogLevel.Debug, LogLevel.Fatal, botLogTarget, loggerName);
-
             LogManager.Configuration = config;
 
             return botLogger;
@@ -131,15 +172,14 @@ public static class LogUtil
     }
 
     /// <summary>
-    /// Sanitizes bot name for use in file paths
-    /// Creates folders like: logs/HeXbyt3-483256/, logs/A-Z-734959/, logs/System/
+    /// Sanitizes bot name for use in file paths.
+    /// Creates folders like logs/HeXbyt3-483256/, logs/A-Z-734959/, or logs/System/.
     /// </summary>
     private static string SanitizeBotName(string botName)
     {
         if (string.IsNullOrWhiteSpace(botName))
             return "UnknownBot";
 
-        // Check if this is a system component and should be consolidated
         if (LogConfig.ConsolidateSystemLogs)
         {
             foreach (var systemIdentity in LogConfig.SystemIdentities)
@@ -153,162 +193,127 @@ public static class LogUtil
             }
         }
 
-        // Keep the full identifier (e.g., "HeXbyt3-483256", "USB-1")
-        // Just sanitize invalid file system characters
         var invalid = Path.GetInvalidFileNameChars();
         var sanitized = string.Join("_", botName.Split(invalid, StringSplitOptions.RemoveEmptyEntries));
-
-        // Remove any trailing/leading whitespace or underscores
         sanitized = sanitized.Trim('_', ' ');
 
         return string.IsNullOrWhiteSpace(sanitized) ? "UnknownBot" : sanitized;
     }
 
     /// <summary>
-    /// Checks if an identity is a trainer identifier (Name-XXXXXX format)
+    /// Checks whether an identity is a trainer identifier in Name-XXXXXX format.
     /// </summary>
     private static bool IsTrainerIdentifier(string identity)
     {
-        return identity.Contains('-') && System.Text.RegularExpressions.Regex.IsMatch(identity, @"-\d{6}$");
+        return identity.Contains('-') &&
+               System.Text.RegularExpressions.Regex.IsMatch(identity, @"-\d{6}$");
     }
 
     /// <summary>
-    /// Checks if identity should skip per-bot logging (system-wide services)
+    /// Checks whether identity should skip per-bot logging because it is a global service.
     /// </summary>
     private static bool IsGlobalIdentity(string identity)
     {
-        return LogConfig.SystemIdentities.Any(prefix => identity.Equals(prefix, StringComparison.OrdinalIgnoreCase) ||
-                                                         identity.StartsWith(prefix, StringComparison.OrdinalIgnoreCase));
+        return LogConfig.SystemIdentities.Any(prefix =>
+            identity.Equals(prefix, StringComparison.OrdinalIgnoreCase) ||
+            identity.StartsWith(prefix, StringComparison.OrdinalIgnoreCase));
     }
 
     /// <summary>
-    /// Flushes buffered logs from early identifier (IP/USB) to trainer folder
+    /// Flushes buffered logs from an early identifier, such as IP/USB, to a trainer folder.
     /// </summary>
     public static void FlushBufferedLogs(string earlyIdentifier, string trainerIdentifier)
     {
-        // Record the connection → trainer mapping so the frozen-bot watchdog can resolve the correct BotLastActivity key
         ConnectionToTrainerMap[earlyIdentifier] = trainerIdentifier;
 
-        if (LogBuffer.TryRemove(earlyIdentifier, out var bufferedLogs))
+        if (!LogBuffer.TryRemove(earlyIdentifier, out var bufferedLogs))
+            return;
+
+        var botLogger = GetOrCreateBotLogger(trainerIdentifier);
+
+        lock (bufferedLogs)
         {
-            var botLogger = GetOrCreateBotLogger(trainerIdentifier);
             foreach (var entry in bufferedLogs)
-            {
                 botLogger.Log(entry.Level, entry.Message);
-            }
         }
     }
 
     public static void LogError(string message, string identity)
     {
-        // Track last activity for watchdog (trainer-identified bots only)
         if (IsTrainerIdentifier(identity))
             BotLastActivity[identity] = DateTime.Now;
 
-        // Log to master log
         if (LogConfig.EnableMasterLog)
             Logger.Log(LogLevel.Error, $"{identity} {message}");
 
-        // Handle per-bot logging
         if (LogConfig.EnablePerBotLogging && !IsGlobalIdentity(identity))
         {
             if (IsTrainerIdentifier(identity))
             {
-                // Identified bot - log directly to trainer folder
                 var botLogger = GetOrCreateBotLogger(identity);
                 botLogger.Log(LogLevel.Error, message);
             }
             else
             {
-                // Early bot identifier (IP/USB) - buffer for later
-                LogBuffer.GetOrAdd(identity, _ => new List<BufferedLogEntry>())
-                    .Add(new BufferedLogEntry(LogLevel.Error, message, DateTime.Now));
+                var bufferedLogs = LogBuffer.GetOrAdd(identity, _ => []);
+
+                lock (bufferedLogs)
+                    bufferedLogs.Add(new BufferedLogEntry(LogLevel.Error, message, DateTime.Now));
             }
         }
 
-        // Forward to external listeners (Discord, etc.)
-        foreach (var fwd in Forwarders)
-        {
-            try
-            {
-                fwd.Forward(message, identity);
-            }
-            catch { }
-        }
+        ForwardLog(message, identity);
     }
 
     public static void LogInfo(string message, string identity)
     {
-        // Track last activity for watchdog (trainer-identified bots only)
         if (IsTrainerIdentifier(identity))
             BotLastActivity[identity] = DateTime.Now;
 
-        // Log to master log
         if (LogConfig.EnableMasterLog)
             Logger.Log(LogLevel.Info, $"{identity} {message}");
 
-        // Handle per-bot logging
         if (LogConfig.EnablePerBotLogging && !IsGlobalIdentity(identity))
         {
             if (IsTrainerIdentifier(identity))
             {
-                // Identified bot - log directly to trainer folder
                 var botLogger = GetOrCreateBotLogger(identity);
                 botLogger.Log(LogLevel.Info, message);
             }
             else
             {
-                // Early bot identifier (IP/USB) - buffer for later
-                LogBuffer.GetOrAdd(identity, _ => new List<BufferedLogEntry>())
-                    .Add(new BufferedLogEntry(LogLevel.Info, message, DateTime.Now));
+                var bufferedLogs = LogBuffer.GetOrAdd(identity, _ => []);
+
+                lock (bufferedLogs)
+                    bufferedLogs.Add(new BufferedLogEntry(LogLevel.Info, message, DateTime.Now));
             }
         }
 
-        // Forward to external listeners (Discord, etc.)
-        foreach (var fwd in Forwarders)
-        {
-            try
-            {
-                fwd.Forward(message, identity);
-            }
-            catch { }
-        }
+        ForwardLog(message, identity);
     }
 
     public static void LogSuspicious(string message, string identity)
     {
-        // Log to master log
         if (LogConfig.EnableMasterLog)
             Logger.Log(LogLevel.Warn, $"[SECURITY] {identity} {message}");
 
-        // Log to per-bot log
         if (LogConfig.EnablePerBotLogging)
         {
             var botLogger = GetOrCreateBotLogger(identity);
             botLogger.Log(LogLevel.Warn, $"[SECURITY] {message}");
         }
 
-        // Forward to external listeners (Discord, etc.)
-        foreach (var fwd in Forwarders)
-        {
-            try
-            {
-                fwd.Forward($"[SECURITY] {message}", identity);
-            }
-            catch { }
-        }
+        ForwardLog($"[SECURITY] {message}", identity);
     }
 
     public static void LogSafe(Exception exception, string identity)
     {
-        // Log to master log
         if (LogConfig.EnableMasterLog)
         {
             Logger.Log(LogLevel.Error, $"Exception from {identity}:");
             Logger.Log(LogLevel.Error, exception);
         }
 
-        // Log to per-bot log
         if (LogConfig.EnablePerBotLogging)
         {
             var botLogger = GetOrCreateBotLogger(identity);
@@ -316,26 +321,30 @@ public static class LogUtil
             botLogger.Log(LogLevel.Error, exception);
         }
 
-        var err = exception.InnerException;
-        while (err is not null)
+        var error = exception.InnerException;
+
+        while (error is not null)
         {
             if (LogConfig.EnableMasterLog)
-                Logger.Log(LogLevel.Error, err);
+                Logger.Log(LogLevel.Error, error);
 
             if (LogConfig.EnablePerBotLogging)
             {
                 var botLogger = GetOrCreateBotLogger(identity);
-                botLogger.Log(LogLevel.Error, err);
+                botLogger.Log(LogLevel.Error, error);
             }
 
-            err = err.InnerException;
+            error = error.InnerException;
         }
     }
 
-    public static void LogText(string message) => Logger.Log(LogLevel.Info, message);
+    public static void LogText(string message)
+    {
+        Logger.Log(LogLevel.Info, message);
+    }
 
     /// <summary>
-    /// Clears the per-bot logger cache for a specific bot (useful when a bot disconnects)
+    /// Clears the per-bot logger cache for a specific bot.
     /// </summary>
     public static void ClearBotLogger(string identity)
     {
@@ -343,29 +352,47 @@ public static class LogUtil
     }
 
     /// <summary>
-    /// Gets the log file path for a specific bot
+    /// Gets the log file path for a specific bot.
     /// </summary>
     public static string GetBotLogPath(string identity)
     {
         var safeBotName = SanitizeBotName(identity);
         var botLogDir = Path.Combine(WorkingDirectory, "logs", safeBotName);
+
         var fileName = LogConfig.IncludeTimestampInFilename
             ? $"SysBotLog_{DateTime.Now:yyyy-MM-dd_HH-mm-ss}.txt"
             : "SysBotLog.txt";
+
         return Path.Combine(botLogDir, fileName);
     }
 
     private static void Log(string message, string identity)
     {
-        foreach (var fwd in Forwarders)
+        ForwardLog(message, identity);
+    }
+
+    /// <summary>
+    /// Sends a log entry to a snapshot of the current forwarders.
+    /// The snapshot prevents a Discord add/remove command from breaking
+    /// an active logging loop with a collection-modified exception.
+    /// </summary>
+    private static void ForwardLog(string message, string identity)
+    {
+        var forwarders = GetForwarderSnapshot();
+
+        foreach (var forwarder in forwarders)
         {
             try
             {
-                fwd.Forward(message, identity);
+                forwarder.Forward(message, identity);
             }
             catch (Exception ex)
             {
-                Logger.Log(LogLevel.Error, $"Failed to forward log from {identity} - {message}");
+                Logger.Log(
+                    LogLevel.Error,
+                    $"Failed to forward log from {identity} - {message}"
+                );
+
                 Logger.Log(LogLevel.Error, ex);
             }
         }
@@ -373,3 +400,4 @@ public static class LogUtil
         LastLogged = DateTime.Now;
     }
 }
+```
