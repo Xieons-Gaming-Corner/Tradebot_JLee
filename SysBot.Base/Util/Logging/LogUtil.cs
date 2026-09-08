@@ -1,8 +1,3 @@
-Copy only the text inside this block into:
-
-text
-SysBot.Base/Util/Logging/LogUtil.cs
-csharp
 using NLog;
 using NLog.Config;
 using NLog.Targets;
